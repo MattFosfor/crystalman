@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { ConvaiClient } from '@convai/web-sdk/core'
+import { AudioRenderer } from '@convai/web-sdk/vanilla'
 import QRCode from 'qrcode'
 
 const CONFIG = {
@@ -37,6 +38,7 @@ function ConvScreen({ onEnd }) {
   const [talking, setTalking] = useState(false)
   const [status, setStatus] = useState('Connexion...')
   const clientRef = useRef(null)
+  const rendererRef = useRef(null)
 
   useEffect(() => {
     const client = new ConvaiClient({
@@ -54,12 +56,25 @@ function ConvScreen({ onEnd }) {
     })
 
     client.connect().then(() => {
-      console.log('Connected!')
-      setStatus('Prêt à vous écouter')
-    }).catch(err => {
-      console.error('Connect error:', err)
-      setStatus('Erreur de connexion')
-    })
+  console.log('Connected!')
+  
+  // Attendre que la room soit vraiment prête
+  const checkRoom = setInterval(() => {
+    try {
+      const renderer = new AudioRenderer(client)
+      rendererRef.current = renderer
+      console.log('AudioRenderer OK')
+      clearInterval(checkRoom)
+    } catch(e) {
+      console.log('Room pas encore prête, retry...')
+    }
+  }, 500)
+
+  setStatus('Prêt à vous écouter')
+}).catch(err => {
+  console.error('Connect error:', err)
+  setStatus('Erreur de connexion')
+})
 
     return () => {
       if (clientRef.current) {
