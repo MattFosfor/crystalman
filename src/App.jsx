@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
 import { ConvaiClient } from '@convai/web-sdk/core'
-import { AudioRenderer } from '@convai/web-sdk/vanilla'
 import QRCode from 'qrcode'
 
 const CONFIG = {
@@ -38,9 +37,8 @@ function ConvScreen({ onEnd }) {
   const [talking, setTalking] = useState(false)
   const [status, setStatus] = useState('Connexion...')
   const clientRef = useRef(null)
-  const rendererRef = useRef(null)
 
-useEffect(() => {
+  useEffect(() => {
     const client = new ConvaiClient({
       characterId: CONFIG.characterId,
       apiKey: CONFIG.apiKey,
@@ -56,24 +54,19 @@ useEffect(() => {
     })
 
     client.connect().then(() => {
-  console.log('Connected!')
-  const renderer = new AudioRenderer()
-  rendererRef.current = renderer
-  client.on('audioTrack', (track) => {
-    renderer.addTrack(track)
-  })
-  setStatus('Prêt à vous écouter')
-}).catch(err => {
-  console.error('Connect error:', err)
-  setStatus('Erreur de connexion')
-})
+      console.log('Connected!')
+      setStatus('Prêt à vous écouter')
+    }).catch(err => {
+      console.error('Connect error:', err)
+      setStatus('Erreur de connexion')
+    })
 
     return () => {
       if (clientRef.current) {
         clientRef.current.disconnect()
       }
     }
-  }, [])   
+  }, [])
 
   const startTalking = async () => {
     if (!talking && clientRef.current) {
@@ -110,8 +103,8 @@ useEffect(() => {
           onMouseDown={startTalking}
           onMouseUp={stopTalking}
           onMouseLeave={stopTalking}
-          onTouchStart={(e) => { e.preventDefault(); startTalking(); }}
-          onTouchEnd={(e) => { e.preventDefault(); stopTalking(); }}
+          onTouchStart={(e) => { e.preventDefault(); startTalking() }}
+          onTouchEnd={(e) => { e.preventDefault(); stopTalking() }}
         >
           🎤
         </button>
