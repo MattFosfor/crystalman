@@ -8,6 +8,8 @@ const CONFIG = {
   apiKey: 'e78880220830beff9b127e805ee5ed8c'
 }
 
+const WS_URL = 'wss://tasting-prevent-swizzle.ngrok-free.dev'
+
 function QRScreen() {
   const canvasRef = useRef(null)
 
@@ -39,8 +41,22 @@ function ConvScreen({ onEnd }) {
   const [status, setStatus] = useState('Connexion...')
   const clientRef = useRef(null)
   const rendererRef = useRef(null)
+  const wsRef = useRef(null)
 
   useEffect(() => {
+    // Connexion WebSocket vers le serveur
+    const ws = new WebSocket(WS_URL)
+    wsRef.current = ws
+
+    ws.onopen = () => {
+      console.log('WebSocket connecté')
+      ws.send(JSON.stringify({ type: 'register', role: 'phone' }))
+      ws.send(JSON.stringify({ type: 'start' }))
+    }
+
+    ws.onerror = (err) => console.error('WebSocket erreur:', err)
+
+    // Connexion Convai
     const client = new ConvaiClient({
       characterId: CONFIG.characterId,
       apiKey: CONFIG.apiKey,
@@ -59,7 +75,6 @@ function ConvScreen({ onEnd }) {
       console.log('Connected!')
       const renderer = new AudioRenderer(client.room)
       rendererRef.current = renderer
-      console.log('AudioRenderer OK')
       setStatus('Prêt à vous écouter')
     }).catch(err => {
       console.error('Connect error:', err)
@@ -67,14 +82,9 @@ function ConvScreen({ onEnd }) {
     })
 
     return () => {
-      if (rendererRef.current) {
-        rendererRef.current.destroy()
-        rendererRef.current = null
-      }
-      if (clientRef.current) {
-        clientRef.current.disconnect()
-        clientRef.current = null
-      }
+      if (wsRef.current) { wsRef.current.close(); wsRef.current = null }
+      if (rendererRef.current) { rendererRef.current.destroy(); rendererRef.current = null }
+      if (clientRef.current) { clientRef.current.disconnect(); clientRef.current = null }
     }
   }, [])
 
@@ -93,10 +103,12 @@ function ConvScreen({ onEnd }) {
   }
 
   const handleEnd = async () => {
-    if (rendererRef.current) {
-      rendererRef.current.destroy()
-      rendererRef.current = null
+    if (wsRef.current) {
+      wsRef.current.send(JSON.stringify({ type: 'end' }))
+      wsRef.current.close()
+      wsRef.current = null
     }
+    if (rendererRef.current) { rendererRef.current.destroy(); rendererRef.current = null }
     if (clientRef.current) {
       clientRef.current.resetSession()
       await clientRef.current.disconnect()
