@@ -56,15 +56,17 @@ useEffect(() => {
     })
 
     client.connect().then(() => {
-      console.log('Connected!')
-      // AudioRenderer instancié APRES connect
-      const renderer = new AudioRenderer(client)
-      rendererRef.current = renderer
-      setStatus('Prêt à vous écouter')
-    }).catch(err => {
-      console.error('Connect error:', err)
-      setStatus('Erreur de connexion')
-    })
+  console.log('Connected!')
+  const renderer = new AudioRenderer()
+  rendererRef.current = renderer
+  client.on('audioTrack', (track) => {
+    renderer.addTrack(track)
+  })
+  setStatus('Prêt à vous écouter')
+}).catch(err => {
+  console.error('Connect error:', err)
+  setStatus('Erreur de connexion')
+})
 
     return () => {
       if (clientRef.current) {
