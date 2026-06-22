@@ -56,29 +56,24 @@ function ConvScreen({ onEnd }) {
     })
 
     client.connect().then(() => {
-  console.log('Connected!')
-  
-  // Attendre que la room soit vraiment prête
-  const checkRoom = setInterval(() => {
-    try {
-      const renderer = new AudioRenderer(client)
+      console.log('Connected!')
+      const renderer = new AudioRenderer(client.room)
       rendererRef.current = renderer
       console.log('AudioRenderer OK')
-      clearInterval(checkRoom)
-    } catch(e) {
-      console.log('Room pas encore prête, retry...')
-    }
-  }, 500)
-
-  setStatus('Prêt à vous écouter')
-}).catch(err => {
-  console.error('Connect error:', err)
-  setStatus('Erreur de connexion')
-})
+      setStatus('Prêt à vous écouter')
+    }).catch(err => {
+      console.error('Connect error:', err)
+      setStatus('Erreur de connexion')
+    })
 
     return () => {
+      if (rendererRef.current) {
+        rendererRef.current.destroy()
+        rendererRef.current = null
+      }
       if (clientRef.current) {
         clientRef.current.disconnect()
+        clientRef.current = null
       }
     }
   }, [])
@@ -98,6 +93,10 @@ function ConvScreen({ onEnd }) {
   }
 
   const handleEnd = async () => {
+    if (rendererRef.current) {
+      rendererRef.current.destroy()
+      rendererRef.current = null
+    }
     if (clientRef.current) {
       clientRef.current.resetSession()
       await clientRef.current.disconnect()
