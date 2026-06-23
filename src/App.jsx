@@ -80,6 +80,10 @@ function ConvScreen({ onEnd }) {
       console.error('Connect error:', err)
       setStatus('Erreur de connexion')
     })
+    client.on('userTranscript', (text) => console.log('User:', text))
+    client.on('response', (text) => console.log('Response:', text))
+    client.on('transcript', (text) => console.log('Transcript:', text))
+    client.on('message', (msg) => console.log('Message:', msg)) 
 
     return () => {
       if (wsRef.current) { wsRef.current.close(); wsRef.current = null }
