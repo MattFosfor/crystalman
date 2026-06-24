@@ -1,12 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { ConvaiClient } from '@convai/web-sdk/core'
-import { AudioRenderer } from '@convai/web-sdk/vanilla'
 import QRCode from 'qrcode'
 
-const CONFIG = {
-  characterId: '070fcc28-16ff-11f1-b1ce-42010a7be02c',
-  apiKey: 'e78880220830beff9b127e805ee5ed8c'
-}
+// Le téléphone n'utilise plus Convai. Il transcrit la voix avec le navigateur
+// (Web Speech API) et envoie le TEXTE au serveur. C'est l'avatar dans UE5 qui répond.
 
 const WS_URL = 'wss://tasting-prevent-swizzle.ngrok-free.dev'
 
@@ -39,12 +35,12 @@ function QRScreen() {
 function ConvScreen({ onEnd }) {
   const [talking, setTalking] = useState(false)
   const [status, setStatus] = useState('Connexion...')
-  const clientRef = useRef(null)
-  const rendererRef = useRef(null)
   const wsRef = useRef(null)
+  const recognitionRef = useRef(null)
+  const finalRef = useRef('')
 
   useEffect(() => {
-    // Connexion WebSocket vers le serveur
+    // 1) Connexion WebSocket vers le serveur Node
     const ws = new WebSocket(WS_URL)
     wsRef.current = ws
 
@@ -52,76 +48,86 @@ function ConvScreen({ onEnd }) {
       console.log('WebSocket connecté')
       ws.send(JSON.stringify({ type: 'register', role: 'phone' }))
       ws.send(JSON.stringify({ type: 'start' }))
+      setStatus('Prêt à vous écouter')
     }
-
     ws.onerror = (err) => console.error('WebSocket erreur:', err)
 
-    // Connexion Convai
-    const client = new ConvaiClient({
-      characterId: CONFIG.characterId,
-      apiKey: CONFIG.apiKey,
-      connectionType: 'audio'
-    })
-    clientRef.current = client
+    // 2) Reconnaissance vocale du navigateur
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SR) {
+      setStatus('Reconnaissance vocale non supportée sur ce navigateur')
+    } else {
+      const rec = new SR()
+      rec.lang = 'fr-FR'
+      rec.continuous = true        // on garde l'écoute tant que le bouton est maintenu
+      rec.interimResults = true    // affichage en direct pendant qu'on parle
 
-    client.on('stateChange', (state) => {
-      if (state.isListening) setStatus("En train d'écouter...")
-      else if (state.isThinking) setStatus('Réflexion...')
-      else if (state.isSpeaking) setStatus('En train de répondre...')
-      else if (state.isConnected) setStatus('Prêt à vous écouter')
-    })
+      rec.onresult = (event) => {
+        let interim = ''
+        let fin = ''
+        for (let i = 0; i < event.results.length; i++) {
+          const txt = event.results[i][0].transcript
+          if (event.results[i].isFinal) fin += txt
+          else interim += txt
+        }
+        finalRef.current = fin
+        setStatus(interim || fin || 'En écoute…')
+      }
 
-    client.connect().then(() => {
-      console.log('Connected!')
-      const renderer = new AudioRenderer(client.room)
-      rendererRef.current = renderer
-      setStatus('Prêt à vous écouter')
-    }).catch(err => {
-      console.error('Connect error:', err)
-      setStatus('Erreur de connexion')
-    })
-    
-    client.on('message', (msg) => {
-  if (msg.type === 'user-transcription' && !msg.isStreaming) {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'text', text: msg.content }))
-      console.log('Envoyé à UE5:', msg.content)
+      rec.onerror = (e) => {
+        console.error('Speech erreur:', e.error)
+        setStatus('Erreur micro : ' + e.error)
+        setTalking(false)
+      }
+
+      // À la fin de l'écoute (relâchement du bouton) : on envoie le texte à UE5
+      rec.onend = () => {
+        setTalking(false)
+        const text = finalRef.current.trim()
+        if (text && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: 'text', text }))
+          console.log('Envoyé à UE5:', text)
+          setStatus('Envoyé : ' + text)
+        } else {
+          setStatus('Prêt à vous écouter')
+        }
+      }
+
+      recognitionRef.current = rec
     }
-  }
-})
 
     return () => {
+      if (recognitionRef.current) { try { recognitionRef.current.abort() } catch (e) {} }
       if (wsRef.current) { wsRef.current.close(); wsRef.current = null }
-      if (rendererRef.current) { rendererRef.current.destroy(); rendererRef.current = null }
-      if (clientRef.current) { clientRef.current.disconnect(); clientRef.current = null }
     }
   }, [])
 
-  const startTalking = async () => {
-    if (!talking && clientRef.current) {
+  const startTalking = () => {
+    if (talking || !recognitionRef.current) return
+    finalRef.current = ''
+    try {
+      recognitionRef.current.start()
       setTalking(true)
-      await clientRef.current.audioControls.enableAudio()
+      setStatus('En écoute…')
+    } catch (e) {
+      console.error('start err:', e)
     }
   }
 
-  const stopTalking = async () => {
-    if (talking && clientRef.current) {
-      setTalking(false)
-      await clientRef.current.audioControls.disableAudio()
-    }
+  const stopTalking = () => {
+    if (!talking || !recognitionRef.current) return
+    try { recognitionRef.current.stop() } catch (e) {}
+    // onend se déclenche et envoie le texte
   }
 
-  const handleEnd = async () => {
+  const handleEnd = () => {
+    if (recognitionRef.current) { try { recognitionRef.current.abort() } catch (e) {} }
     if (wsRef.current) {
-      wsRef.current.send(JSON.stringify({ type: 'end' }))
+      if (wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'end' }))
+      }
       wsRef.current.close()
       wsRef.current = null
-    }
-    if (rendererRef.current) { rendererRef.current.destroy(); rendererRef.current = null }
-    if (clientRef.current) {
-      clientRef.current.resetSession()
-      await clientRef.current.disconnect()
-      clientRef.current = null
     }
     onEnd()
   }
